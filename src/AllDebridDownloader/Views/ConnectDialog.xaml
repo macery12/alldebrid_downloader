@@ -1,0 +1,114 @@
+<Window x:Class="AllDebridDownloader.Views.ConnectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Connect to AllDebrid"
+        Width="520" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg}">
+
+    <StackPanel Margin="20">
+
+        <TextBlock Text="Connect to AllDebrid" Style="{StaticResource Heading}" FontSize="16"/>
+
+        <RadioButton x:Name="PinMode" GroupName="Mode" IsChecked="True"
+                     Content="Sign in with a PIN code"
+                     Checked="OnModeChanged"/>
+        <RadioButton x:Name="KeyMode" GroupName="Mode"
+                     Content="Paste an API key"
+                     Checked="OnModeChanged"/>
+
+        <Separator Margin="0,12"/>
+
+        <!-- ===================== PIN ===================== -->
+        <StackPanel x:Name="PinPanel">
+
+            <TextBlock Text="Your PIN code" Style="{StaticResource SubtleText}"/>
+
+            <Border Background="{StaticResource SurfaceAlt}"
+                    BorderBrush="{StaticResource BorderBrushBase}"
+                    BorderThickness="1" CornerRadius="6"
+                    Padding="16,12" Margin="0,6,0,12"
+                    HorizontalAlignment="Left">
+                <TextBlock x:Name="PinText" Text="…"
+                           FontSize="30" FontWeight="Bold"
+                           FontFamily="Consolas"
+                           Foreground="{StaticResource Accent}"/>
+            </Border>
+
+            <TextBlock Style="{StaticResource SubtleText}" Margin="0,0,0,4"
+                       Text="1.  Open the AllDebrid PIN page and submit this code."/>
+
+            <StackPanel Orientation="Horizontal" Margin="18,2,0,10">
+                <Button x:Name="OpenBrowserButton" Content="Open in browser"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="OnOpenBrowser"/>
+                <Button x:Name="CopyLinkButton" Content="Copy link" Margin="8,0,0,0"
+                        Click="OnCopyLink"/>
+            </StackPanel>
+
+            <TextBlock Style="{StaticResource SubtleText}" Margin="0,0,0,4"
+                       Text="2.  Sign in if asked, then submit the PIN."/>
+            <TextBlock Style="{StaticResource SubtleText}" Margin="0,0,0,12"
+                       Text="3.  This window continues on its own."/>
+
+            <Border Background="{StaticResource Surface}" CornerRadius="4" Padding="10,8">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="PinStatus" Text="Getting a PIN…"
+                               Foreground="{StaticResource Muted}"/>
+                    <TextBlock x:Name="PinCountdown" Margin="8,0,0,0"
+                               Foreground="{StaticResource Muted}"/>
+                </StackPanel>
+            </Border>
+
+            <Button x:Name="NewPinButton" Content="Get a new PIN"
+                    HorizontalAlignment="Left" Margin="0,10,0,0"
+                    Visibility="Collapsed"
+                    Click="OnNewPin"/>
+        </StackPanel>
+
+        <!-- ===================== API key ===================== -->
+        <StackPanel x:Name="KeyPanel" Visibility="Collapsed">
+
+            <TextBlock Style="{StaticResource SubtleText}" Margin="0,0,0,8"
+                       Text="Create an API key at https://alldebrid.com/apikeys and paste it below."/>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <PasswordBox x:Name="KeyBox" Grid.Column="0"
+                             PasswordChanged="OnKeyChanged"/>
+                <TextBox x:Name="KeyBoxVisible" Grid.Column="0"
+                         Visibility="Collapsed"
+                         TextChanged="OnKeyVisibleChanged"/>
+
+                <ToggleButton x:Name="ShowKeyToggle" Grid.Column="1"
+                              Content="Show" Margin="8,0,0,0" Padding="12,6"
+                              Background="{StaticResource SurfaceAlt}"
+                              Foreground="{StaticResource Text}"
+                              BorderBrush="{StaticResource BorderBrushBase}"
+                              Checked="OnToggleShowKey" Unchecked="OnToggleShowKey"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- ===================== Shared footer ===================== -->
+        <Border x:Name="ErrorBanner" Visibility="Collapsed"
+                Background="#33F05252" BorderBrush="{StaticResource Error}"
+                BorderThickness="1" CornerRadius="4"
+                Padding="10,8" Margin="0,14,0,0">
+            <TextBlock x:Name="ErrorText" Foreground="{StaticResource Error}" TextWrapping="Wrap"/>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Cancel" Click="OnCancel" MinWidth="90"/>
+            <Button x:Name="ConnectButton" Content="Connect" Margin="8,0,0,0" MinWidth="110"
+                    Style="{StaticResource PrimaryButton}"
+                    IsEnabled="False"
+                    Click="OnConnect"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>

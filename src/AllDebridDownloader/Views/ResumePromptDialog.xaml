@@ -1,0 +1,54 @@
+<Window x:Class="AllDebridDownloader.Views.ResumePromptDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Unfinished downloads"
+        Width="560" SizeToContent="Height" MaxHeight="520"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg}">
+
+    <StackPanel Margin="20">
+
+        <TextBlock Text="Unfinished downloads" Style="{StaticResource Heading}" FontSize="16"/>
+
+        <TextBlock x:Name="SummaryText" Style="{StaticResource SubtleText}" Margin="0,0,0,12"/>
+
+        <Border Style="{StaticResource Card}" Padding="4">
+            <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="ItemList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="8,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="60"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Path}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Path}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding SizeText}"
+                                           Foreground="{StaticResource Muted}"
+                                           Margin="12,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding PercentText}"
+                                           Foreground="{StaticResource Accent}"
+                                           HorizontalAlignment="Right"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock Style="{StaticResource SubtleText}" Margin="0,10,0,0"
+                   Text="Resuming continues from where each file stopped. Discard deletes the partial files."/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Discard" MinWidth="90" Click="OnDiscard"/>
+            <Button Content="Not now" MinWidth="90" Margin="8,0,0,0" Click="OnNotNow"/>
+            <Button Content="Resume all" MinWidth="110" Margin="8,0,0,0"
+                    Style="{StaticResource PrimaryButton}" Click="OnResume"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>

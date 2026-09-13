@@ -1,0 +1,20 @@
+<Application x:Class="AllDebridDownloader.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:helpers="clr-namespace:AllDebridDownloader.Helpers"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Dark.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <helpers:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <helpers:BoolToVisibilityConverter x:Key="BoolToVisInverted" Invert="True"/>
+            <helpers:ByteSizeConverter x:Key="ByteSize"/>
+            <helpers:StateToBrushConverter x:Key="StateBrush"/>
+            <helpers:LogLevelToBrushConverter x:Key="LogBrush"/>
+            <helpers:NodeGlyphConverter x:Key="NodeGlyph"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

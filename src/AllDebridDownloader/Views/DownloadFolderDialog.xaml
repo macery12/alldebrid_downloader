@@ -1,0 +1,57 @@
+<Window x:Class="AllDebridDownloader.Views.DownloadFolderDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Where should downloads go?"
+        Width="560" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Bg}">
+
+    <StackPanel Margin="20">
+
+        <TextBlock Text="Where should downloads go?" Style="{StaticResource Heading}" FontSize="16"/>
+
+        <Border x:Name="Banner" Visibility="Collapsed"
+                Background="#33D89614" BorderBrush="{StaticResource Warn}"
+                BorderThickness="1" CornerRadius="4"
+                Padding="10,8" Margin="0,0,0,12">
+            <TextBlock x:Name="BannerText" Foreground="{StaticResource Warn}" TextWrapping="Wrap"/>
+        </Border>
+
+        <TextBlock Style="{StaticResource SubtleText}" Margin="0,0,0,10"
+                   Text="Every torrent gets its own subfolder here, keeping its original folder structure."/>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="PathBox" Grid.Column="0" TextChanged="OnPathChanged"/>
+            <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0" Click="OnBrowse"/>
+        </Grid>
+
+        <Border Background="{StaticResource Surface}" CornerRadius="4"
+                Padding="10,8" Margin="0,12,0,0">
+            <StackPanel>
+                <TextBlock Text="Example" Style="{StaticResource SubtleText}" FontSize="11"/>
+                <TextBlock x:Name="ExampleText" FontFamily="Consolas" FontSize="12"
+                           Foreground="{StaticResource Muted}" TextWrapping="Wrap"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="ErrorBanner" Visibility="Collapsed"
+                Background="#33F05252" BorderBrush="{StaticResource Error}"
+                BorderThickness="1" CornerRadius="4"
+                Padding="10,8" Margin="0,12,0,0">
+            <TextBlock x:Name="ErrorText" Foreground="{StaticResource Error}" TextWrapping="Wrap"/>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="UseButton" Content="Use this folder" MinWidth="140"
+                    Style="{StaticResource PrimaryButton}"
+                    Click="OnUse"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>
