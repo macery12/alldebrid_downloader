@@ -47,6 +47,9 @@ public sealed class AppConfig
     public bool DeleteMagnetAfterDownload { get; set; }
     public string? LastTorrentPickerDirectory { get; set; }
 
+    /// <summary>Open Home on the full torrent grid instead of the wizard.</summary>
+    public bool ClassicHome { get; set; }
+
     public WindowStateConfig WindowState { get; set; } = new();
 
     /// <summary>Clamp every tunable into its supported range.</summary>

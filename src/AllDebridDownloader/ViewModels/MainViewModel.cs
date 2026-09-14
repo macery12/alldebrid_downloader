@@ -10,6 +10,9 @@ using AllDebridDownloader.Views;
 
 namespace AllDebridDownloader.ViewModels;
 
+/// <summary>Where the Home wizard is: choose a torrent, choose its files, watch it start.</summary>
+public enum HomeStep { Pick, Files, Started }
+
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     // A magnet URI, or a bare 40-char hex / 32-char base32 infohash.
@@ -20,6 +23,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private static partial Regex BareHashPattern();
 
     private const long MaxTorrentFileBytes = 10L * 1024 * 1024;
+
+    // Home shows two rows of three cards and a single line of chips; the rest is in Classic.
+    private const int MaxReadyCards = 6;
+    private const int MaxPendingChips = 4;
 
     private readonly Logger _log;
     private readonly ConfigService _config;
@@ -34,6 +41,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private TorrentViewModel? _selectedTorrent;
     private UserInfo? _user;
     private bool _isBusy;
+    private HomeStep _step = HomeStep.Pick;
+    private bool _isClassicView;
+    private DownloadBatchViewModel? _currentBatch;
+    private int _selectedTabIndex;
+    private int _pendingMoreCount;
 
     public MainViewModel(Logger log, ConfigService config)
     {
@@ -45,6 +57,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _poller = new MagnetPoller(Client, log, config);
         Downloads = new DownloadManager(log, config, _resolver);
         Settings = new SettingsViewModel(config, Downloads, log);
+        _isClassicView = config.Current.ClassicHome;
 
         Downloads.ConflictHandler = AskConflictAsync;
         Downloads.AggregateChanged += OnAggregateChanged;
@@ -59,6 +72,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             + wait.TotalSeconds.ToString("0") + "s.", isError: false);
 
         Settings.DownloadDirectoryChanged += () => OnPropertyChanged(nameof(DestinationPreview));
+        Torrents.CollectionChanged += (_, _) => RefreshHome();
 
         AddMagnetCommand = new AsyncRelayCommand(AddMagnetAsync, () => !IsBusy);
         AddTorrentFileCommand = new AsyncRelayCommand(AddTorrentFileAsync, () => !IsBusy);
@@ -77,6 +91,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OpenDestinationCommand = new RelayCommand(OpenDestinationFolder);
         CopyHashCommand = new RelayCommand(CopySelectedHash);
         DismissNoticeCommand = new RelayCommand(() => SetNotice(null));
+
+        OpenTorrentCommand = new RelayCommand(p => { if (p is TorrentViewModel t) OpenTorrent(t); });
+        ShowInClassicCommand = new RelayCommand(p =>
+        {
+            if (p is TorrentViewModel t) SelectedTorrent = t;
+            IsClassicView = true;
+        });
+        ShowClassicCommand = new RelayCommand(() => IsClassicView = true);
+        GoHomeCommand = new RelayCommand(GoHome);
+        ShowDownloadsCommand = new RelayCommand(() => SelectedTabIndex = 1);
+        OpenBatchFolderCommand = new RelayCommand(() =>
+        {
+            if (CurrentBatch is not null) OpenInExplorer(CurrentBatch.Folder);
+        });
 
         PauseAllCommand = new RelayCommand(() => Downloads.PauseAll());
         ResumeAllCommand = new RelayCommand(() => Downloads.ResumeAll());
@@ -119,6 +147,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public RelayCommand OpenDestinationCommand { get; }
     public RelayCommand CopyHashCommand { get; }
     public RelayCommand DismissNoticeCommand { get; }
+
+    public RelayCommand OpenTorrentCommand { get; }
+    public RelayCommand ShowInClassicCommand { get; }
+    public RelayCommand ShowClassicCommand { get; }
+    public RelayCommand GoHomeCommand { get; }
+    public RelayCommand ShowDownloadsCommand { get; }
+    public RelayCommand OpenBatchFolderCommand { get; }
 
     public RelayCommand PauseAllCommand { get; }
     public RelayCommand ResumeAllCommand { get; }
@@ -295,6 +330,93 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    // ---- Home: wizard or classic -------------------------------------------
+    //
+    // The wizard runs Pick -> Files -> Started -> back to Pick. Classic is the full torrent
+    // grid with the file tree underneath. Both share SelectedTorrent, so switching views
+    // keeps whatever torrent is open.
+
+    /// <summary>Ready torrents for the Home cards, newest first.</summary>
+    public ObservableCollection<TorrentViewModel> RecentReady { get; } = new();
+
+    /// <summary>Torrents still processing or failed, shown as chips under the cards.</summary>
+    public ObservableCollection<TorrentViewModel> PendingTorrents { get; } = new();
+
+    public HomeStep Step
+    {
+        get => _step;
+        private set { if (SetProperty(ref _step, value)) RaiseHomeViewState(); }
+    }
+
+    /// <summary>Remembered between runs, so someone who prefers the grid starts there.</summary>
+    public bool IsClassicView
+    {
+        get => _isClassicView;
+        set
+        {
+            if (!SetProperty(ref _isClassicView, value)) return;
+            _config.Current.ClassicHome = value;
+            _config.SaveSoon();
+            OnPropertyChanged(nameof(IsWizardView));
+            RaiseHomeViewState();
+        }
+    }
+
+    public bool IsWizardView
+    {
+        get => !IsClassicView;
+        set => IsClassicView = !value;
+    }
+
+    public bool ShowPickStep => !IsClassicView && Step == HomeStep.Pick;
+    public bool ShowFilesStep => !IsClassicView && Step == HomeStep.Files;
+    public bool ShowStartedStep => !IsClassicView && Step == HomeStep.Started;
+
+    /// <summary>The batch the Started step is following; null on the other steps.</summary>
+    public DownloadBatchViewModel? CurrentBatch
+    {
+        get => _currentBatch;
+        private set
+        {
+            var previous = _currentBatch;
+            if (SetProperty(ref _currentBatch, value)) previous?.Dispose();
+        }
+    }
+
+    public int SelectedTabIndex
+    {
+        get => _selectedTabIndex;
+        set => SetProperty(ref _selectedTabIndex, value);
+    }
+
+    public bool HasRecentReady => RecentReady.Count > 0;
+    public bool HasPending => PendingTorrents.Count > 0;
+    public bool HasPendingMore => _pendingMoreCount > 0;
+    public string PendingMoreText => "+" + _pendingMoreCount + " more";
+    public string AllTorrentsLinkText => "All torrents (" + Torrents.Count + ")";
+
+    public bool HasTransfersInFlight => Downloads.ActiveCount + Downloads.QueuedCount > 0;
+
+    /// <summary>"S01E01.mkv and 3 more", for the strip at the bottom of Home.</summary>
+    public string NowDownloadingText
+    {
+        get
+        {
+            var inFlight = Downloads.Transfers
+                .Where(t => t.IsActive || t.State == TransferState.Queued)
+                .ToList();
+            if (inFlight.Count == 0) return "";
+
+            var lead = inFlight.FirstOrDefault(t => t.IsActive) ?? inFlight[0];
+            return inFlight.Count == 1
+                ? lead.FileName
+                : lead.FileName + " and " + (inFlight.Count - 1) + " more";
+        }
+    }
+
+    private void RaiseHomeViewState() => OnPropertiesChanged(
+        nameof(ShowPickStep), nameof(ShowFilesStep), nameof(ShowStartedStep));
+
     // ---- aggregate progress, bound by the Downloads tab -------------------
 
     public string AggregateProgressText =>
@@ -319,9 +441,15 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OnAggregateChanged() => OnPropertiesChanged(
-        nameof(AggregateProgressText), nameof(AggregatePercent), nameof(AggregateSpeedText),
-        nameof(AggregateEtaText), nameof(ActivityText));
+    private void OnAggregateChanged()
+    {
+        OnPropertiesChanged(
+            nameof(AggregateProgressText), nameof(AggregatePercent), nameof(AggregateSpeedText),
+            nameof(AggregateEtaText), nameof(ActivityText),
+            nameof(HasTransfersInFlight), nameof(NowDownloadingText));
+
+        CurrentBatch?.Refresh();
+    }
 
     public void RaiseDownloadDirectoryChanged() =>
         OnPropertiesChanged(nameof(DestinationPreview));
@@ -574,6 +702,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // a batch of pasted magnets.
         var insertAt = 0;
         TorrentViewModel? firstTouched = null;
+        var touchedCount = 0;
+        var now = DateTimeOffset.Now;
 
         foreach (var result in results)
         {
@@ -592,6 +722,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
                 Torrents.Insert(Math.Min(insertAt++, Torrents.Count), errorRow);
                 firstTouched ??= errorRow;
+                touchedCount++;
                 continue;
             }
 
@@ -602,6 +733,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 // because the user just asked for it and expects to see it.
                 existing.Hash = result.Hash;
                 if (result.Size > 0) existing.Size = result.Size;
+                existing.TouchedAt = now;
 
                 var currentIndex = Torrents.IndexOf(existing);
                 var target = Math.Min(insertAt, Torrents.Count - 1);
@@ -609,6 +741,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 insertAt++;
 
                 firstTouched ??= existing;
+                touchedCount++;
                 continue;
             }
 
@@ -618,7 +751,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 Hash = result.Hash,
                 Size = result.Size,
                 Kind = result.Ready ? MagnetStatusKind.Ready : MagnetStatusKind.Processing,
-                StatusText = result.Ready ? "Ready" : "In queue"
+                StatusText = result.Ready ? "Ready" : "In queue",
+                TouchedAt = now
             };
 
             Torrents.Insert(Math.Min(insertAt++, Torrents.Count), vm);
@@ -626,6 +760,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             added++;
 
             firstTouched ??= vm;
+            touchedCount++;
         }
 
         if (added > 0)
@@ -641,7 +776,25 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             SelectedTorrent = firstTouched;
             TorrentBroughtToTop?.Invoke(firstTouched);
+
+            if (!IsClassicView)
+            {
+                // One torrent AllDebrid already has is step 1 done: go straight to its files.
+                // Anything else lands on Home, where it shows as a card or a chip.
+                if (touchedCount == 1 && firstTouched is { IsReady: true, Id: > 0 })
+                {
+                    OpenTorrent(firstTouched);
+                }
+                else
+                {
+                    CurrentBatch = null;
+                    Step = HomeStep.Pick;
+                }
+            }
         }
+
+        // A re-added magnet changes its place in "newest first" without moving in the list.
+        RefreshHome();
     }
 
     /// <summary>
@@ -653,6 +806,75 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     private static string Shorten(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
+
+    // -----------------------------------------------------------------------
+    // Home wizard
+    // -----------------------------------------------------------------------
+
+    /// <summary>Step 1 to step 2: show this torrent's files.</summary>
+    public void OpenTorrent(TorrentViewModel torrent)
+    {
+        var alreadySelected = ReferenceEquals(SelectedTorrent, torrent);
+        SelectedTorrent = torrent;
+
+        // The setter only fetches on a change. Re-opening a torrent whose last fetch failed
+        // should try again rather than show the old error.
+        if (alreadySelected
+            && torrent is { IsReady: true, HasTree: false, FilesRequested: false, IsLoadingFiles: false })
+        {
+            _ = LoadFilesAsync(torrent);
+        }
+
+        CurrentBatch = null;
+        IsClassicView = false;
+        Step = HomeStep.Files;
+    }
+
+    /// <summary>Step 2 to step 3: follow the batch that was just queued.</summary>
+    public void ShowStarted(DownloadBatchViewModel batch)
+    {
+        CurrentBatch = batch;
+        Step = HomeStep.Started;
+    }
+
+    /// <summary>Back to step 1, with nothing left open.</summary>
+    public void GoHome()
+    {
+        CurrentBatch = null;
+        SelectedTorrent = null;
+        Step = HomeStep.Pick;
+    }
+
+    /// <summary>Rebuild the Home cards and chips from the torrent list.</summary>
+    private void RefreshHome()
+    {
+        // Newest first. Ties keep list order, which already puts this session's adds on top.
+        var newestFirst = Torrents
+            .Select((torrent, index) => (torrent, index))
+            .OrderByDescending(x => x.torrent.RecentAt ?? DateTimeOffset.MinValue)
+            .ThenBy(x => x.index)
+            .Select(x => x.torrent)
+            .ToList();
+
+        SyncCollection(RecentReady, newestFirst.Where(t => t.IsReady).Take(MaxReadyCards));
+
+        var pending = newestFirst.Where(t => !t.IsReady).ToList();
+        SyncCollection(PendingTorrents, pending.Take(MaxPendingChips));
+        _pendingMoreCount = pending.Count - PendingTorrents.Count;
+
+        OnPropertiesChanged(nameof(HasRecentReady), nameof(HasPending), nameof(HasPendingMore),
+            nameof(PendingMoreText), nameof(AllTorrentsLinkText));
+    }
+
+    /// <summary>Replace the contents only when they differ, so cards don't flicker on every poll.</summary>
+    private static void SyncCollection<T>(ObservableCollection<T> target, IEnumerable<T> desired)
+    {
+        var wanted = desired.ToList();
+        if (target.SequenceEqual(wanted)) return;
+
+        target.Clear();
+        foreach (var item in wanted) target.Add(item);
+    }
 
     // -----------------------------------------------------------------------
     // Status updates
@@ -681,6 +903,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
             RestartMagnetCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(DestinationPreview));
+            RefreshHome();
         });
     }
 
@@ -851,6 +1074,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             torrent.FilesRequested = false;
             torrent.Tree = null;
             _poller.RequestImmediatePoll();
+            RefreshHome();
         }
         catch (AllDebridApiException ex) when (ex.Code == "MAGNET_PROCESSING")
         {
@@ -975,11 +1199,24 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         Directory.CreateDirectory(torrentFolder);
 
+        var before = Downloads.Transfers.ToHashSet();
         var queued = await Downloads.EnqueueAsync(items);
 
         StatusMessage = queued > 0
             ? "Queued " + queued + " file(s) to " + torrentFolder
             : "Nothing was queued.";
+
+        if (queued > 0 && !IsClassicView)
+        {
+            // Follow what was actually queued: skipped conflicts are absent, and a renamed
+            // file is a new TransferItem rather than one of the items built above.
+            var batch = Downloads.Transfers
+                .Where(t => !before.Contains(t) && t.MagnetId == torrent.Id)
+                .ToList();
+
+            if (batch.Count > 0)
+                ShowStarted(new DownloadBatchViewModel(torrent.Name, torrentFolder, batch));
+        }
     }
 
     private async Task<ConflictChoice> AskConflictAsync(ConflictRequest request)
@@ -1157,6 +1394,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        CurrentBatch?.Dispose();
         _poller.Dispose();
         Downloads.Dispose();
         Client.Dispose();

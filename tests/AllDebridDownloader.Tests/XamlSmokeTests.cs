@@ -57,7 +57,7 @@ public sealed class XamlSmokeTests
                 "Bg", "Surface", "SurfaceAlt", "BorderBrushBase", "Text", "Muted",
                 "Accent", "AccentHover", "Success", "Warn", "Error",
                 "Heading", "SubtleText", "Card", "PrimaryButton", "LinkButton",
-                "MenuTabs", "MenuTabItem",
+                "MenuTabs", "MenuTabItem", "TorrentCard", "ChipButton", "SegmentRadio",
                 "BoolToVis", "BoolToVisInverted", "ByteSize", "StateBrush", "LogBrush",
                 "NodeGlyph"
             ];
@@ -195,6 +195,87 @@ public sealed class XamlSmokeTests
                     // Force the newly selected tab's content to be built and laid out.
                     window.UpdateLayout();
                 }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void Every_home_step_realises_its_content()
+    {
+        // Each wizard step and the classic view is collapsed until it is reached, so a bad
+        // binding in one of them would otherwise only show up when a user got there.
+        OnStaThread(_ =>
+        {
+            using var log = new TestLogger();
+            using var temp = new TempDir();
+
+            var config = new ConfigService(log.Logger, temp.Path);
+            config.Load();
+            config.Current.DownloadDirectory = temp.Path;
+
+            using var vm = new MainViewModel(log.Logger, config);
+
+            var ready = new TorrentViewModel(123)
+            {
+                Name = "Some.Show.S01",
+                Size = 42_700_000_000,
+                Kind = MagnetStatusKind.Ready,
+                StatusText = "Ready",
+                FilesRequested = true,
+                AddedAt = DateTimeOffset.Now.AddHours(-2)
+            };
+            ready.Tree = FileNodeViewModel.BuildTree("Some.Show.S01",
+            [
+                new MagnetFileNode { Name = "S01E01.mkv", Size = 2_100_000_000,
+                    Link = "https://alldebrid.com/f/a" }
+            ]);
+
+            vm.Torrents.Add(ready);
+            vm.Torrents.Add(new TorrentViewModel(456)
+            {
+                Name = "Still.Fetching", Kind = MagnetStatusKind.Processing,
+                StatusText = "Downloading", Size = 1000, Downloaded = 630
+            });
+
+            var window = new MainWindow { DataContext = vm };
+            window.UseWindowState(() => config.Current.WindowState);
+
+            Realize(window);
+            try
+            {
+                Assert.True(vm.ShowPickStep);
+                window.UpdateLayout();
+
+                vm.OpenTorrent(ready);
+                window.UpdateLayout();
+                Assert.True(vm.ShowFilesStep);
+
+                var item = new TransferItem
+                {
+                    SourceLink = "https://alldebrid.com/f/a",
+                    FinalPath = Path.Combine(temp.Path, "Some.Show.S01", "S01E01.mkv"),
+                    FileName = "S01E01.mkv",
+                    RelativePath = Path.Combine("Some.Show.S01", "S01E01.mkv"),
+                    MagnetId = 123,
+                    TorrentName = "Some.Show.S01",
+                    ExpectedSize = 2_100_000_000
+                };
+                vm.ShowStarted(new DownloadBatchViewModel("Some.Show.S01",
+                    Path.Combine(temp.Path, "Some.Show.S01"), [item]));
+                window.UpdateLayout();
+                Assert.True(vm.ShowStartedStep);
+
+                vm.IsClassicView = true;
+                window.UpdateLayout();
+
+                vm.IsClassicView = false;
+                vm.GoHome();
+                window.UpdateLayout();
+                Assert.True(vm.ShowPickStep);
             }
             finally
             {
