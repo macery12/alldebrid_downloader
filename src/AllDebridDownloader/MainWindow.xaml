@@ -1,0 +1,1194 @@
+<Window x:Class="AllDebridDownloader.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AllDebridDownloader.ViewModels"
+        Title="AllDebrid Downloader"
+        Width="1180" Height="800"
+        MinWidth="900" MinHeight="600"
+        AllowDrop="True"
+        Background="{StaticResource Bg}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0" Style="{StaticResource MenuTabs}"
+                    SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+
+            <!-- ================================================================ -->
+            <!-- HOME                                                              -->
+            <!-- ================================================================ -->
+            <TabItem Header="Home" Style="{StaticResource MenuTabItem}">
+                <Grid Margin="16,10,16,16">
+                    <Grid.Resources>
+                        <!-- Shared by the wizard's file step and the classic file pane. -->
+                        <Style x:Key="FileTreeItem" TargetType="TreeViewItem">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                        </Style>
+
+                        <HierarchicalDataTemplate DataType="{x:Type vm:FileNodeViewModel}"
+                                                  ItemsSource="{Binding Children}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*" MinWidth="120"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <CheckBox Grid.Column="0"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                          IsThreeState="True"
+                                          Margin="0,0,6,0"/>
+
+                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Name}"/>
+
+                                <TextBlock Grid.Column="2" Text="{Binding SizeText}"
+                                           Foreground="{StaticResource Muted}"
+                                           FontSize="11" Margin="16,0,8,0"/>
+                            </Grid>
+                        </HierarchicalDataTemplate>
+                    </Grid.Resources>
+
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top bar: back link on the files step, view switch always -->
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0" Style="{StaticResource LinkButton}"
+                                Content="← Back to Home"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Command="{Binding GoHomeCommand}"
+                                Visibility="{Binding ShowFilesStep, Converter={StaticResource BoolToVis}}"/>
+
+                        <Border Grid.Column="1" Background="#FF121418"
+                                BorderBrush="{StaticResource BorderBrushBase}" BorderThickness="1"
+                                CornerRadius="5" Padding="2">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton GroupName="HomeView" Content="Wizard"
+                                             Style="{StaticResource SegmentRadio}"
+                                             ToolTip="Pick a torrent, pick its files, download."
+                                             IsChecked="{Binding IsWizardView, Mode=TwoWay}"/>
+                                <RadioButton GroupName="HomeView" Content="Classic"
+                                             Style="{StaticResource SegmentRadio}"
+                                             ToolTip="Every torrent on the account, with restart, delete and copy hash."
+                                             IsChecked="{Binding IsClassicView, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Notice banner -->
+                    <Border Grid.Row="1" Margin="0,0,0,12"
+                            Visibility="{Binding HasNotice, Converter={StaticResource BoolToVis}}"
+                            Background="#22FFFFFF" BorderThickness="1" CornerRadius="4"
+                            Padding="10,8">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding NoticeIsError}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource Error}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding Notice}" TextWrapping="Wrap"/>
+                                <Expander Header="Technical details" Margin="0,6,0,0"
+                                          Visibility="{Binding HasNoticeDetails,
+                                                       Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding NoticeDetails}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               Foreground="{StaticResource Muted}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </Expander>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="✕" Width="26" Height="26"
+                                    VerticalAlignment="Top"
+                                    Command="{Binding DismissNoticeCommand}"/>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2">
+
+                        <!-- ====================================================== -->
+                        <!-- Wizard step 1: add or pick a ready torrent             -->
+                        <!-- ====================================================== -->
+                        <DockPanel Visibility="{Binding ShowPickStep, Converter={StaticResource BoolToVis}}">
+
+                            <!-- What is downloading right now, across every torrent -->
+                            <Border DockPanel.Dock="Bottom" Margin="0,12,0,0"
+                                    Background="{StaticResource SurfaceAlt}"
+                                    BorderBrush="{StaticResource BorderBrushBase}" BorderThickness="1"
+                                    CornerRadius="6" Padding="12,9"
+                                    Visibility="{Binding HasTransfersInFlight, Converter={StaticResource BoolToVis}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <Ellipse Grid.Column="0" Width="8" Height="8"
+                                             Fill="{StaticResource Accent}" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Column="1" Margin="10,0,0,0"
+                                               TextTrimming="CharacterEllipsis">
+                                        <Run Text="Downloading now:" Foreground="{StaticResource Muted}"/>
+                                        <Run Text="{Binding NowDownloadingText, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    </TextBlock>
+
+                                    <ProgressBar Grid.Column="2" Margin="16,0"
+                                                 Value="{Binding AggregatePercent, Mode=OneWay}" Maximum="100"/>
+
+                                    <TextBlock Grid.Column="3" Foreground="{StaticResource Muted}">
+                                        <Run Text="{Binding AggregateSpeedText, Mode=OneWay}"/>
+                                        <Run Text=" · ETA"/>
+                                        <Run Text="{Binding AggregateEtaText, Mode=OneWay}"/>
+                                    </TextBlock>
+
+                                    <Button Grid.Column="4" Style="{StaticResource LinkButton}"
+                                            Content="View" Margin="16,0,0,0" VerticalAlignment="Center"
+                                            Command="{Binding ShowDownloadsCommand}"/>
+                                </Grid>
+                            </Border>
+
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+
+                                    <!-- Add -->
+                                    <Grid>
+                                        <Rectangle RadiusX="8" RadiusY="8"
+                                                   Stroke="#FF3A414B" StrokeThickness="1.5"
+                                                   StrokeDashArray="4 3" Fill="#FF1A1D22"/>
+
+                                        <Grid Margin="20,18">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0" Width="52" Height="52"
+                                                    CornerRadius="12" Background="#FF1B2638"
+                                                    VerticalAlignment="Top">
+                                                <Path Width="26" Height="26"
+                                                      Data="M 13,4 L 13,17 M 8,12 L 13,17 L 18,12 M 7,22 L 19,22"
+                                                      Stroke="{StaticResource AccentHover}" StrokeThickness="2"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1" Margin="18,0,0,0">
+                                                <TextBlock Text="Paste a magnet link, or drop a .torrent file anywhere"
+                                                           FontSize="16" FontWeight="SemiBold"/>
+
+                                                <Grid Margin="0,10,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding MagnetInput, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="Paste a magnet link or a 40-character info hash. Several lines are allowed."
+                                                             AcceptsReturn="True"
+                                                             MaxHeight="72"
+                                                             VerticalScrollBarVisibility="Auto"
+                                                             KeyDown="OnMagnetBoxKeyDown"/>
+
+                                                    <Button Grid.Column="1" Content="Add" Margin="8,0,0,0" MinWidth="70"
+                                                            Style="{StaticResource PrimaryButton}"
+                                                            Command="{Binding AddMagnetCommand}"/>
+
+                                                    <Button Grid.Column="2" Content="Browse .torrent…" Margin="8,0,0,0"
+                                                            Command="{Binding AddTorrentFileCommand}"/>
+                                                </Grid>
+
+                                                <TextBlock Style="{StaticResource SubtleText}" FontSize="11"
+                                                           Margin="0,6,0,0"
+                                                           Text="Several magnets? One per line (Shift+Enter)."/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+
+                                    <!-- Ready to download, newest first -->
+                                    <Grid Margin="0,20,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="Ready to download"
+                                                   Style="{StaticResource Heading}" Margin="0"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="newest first"
+                                                   Style="{StaticResource SubtleText}" FontSize="11"
+                                                   Margin="10,0" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="2" Style="{StaticResource LinkButton}"
+                                                Content="{Binding AllTorrentsLinkText}"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding ShowClassicCommand}"/>
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding RecentReady}" Margin="0,0,-10,0"
+                                                  Focusable="False">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="3"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:TorrentViewModel}">
+                                                <Button Style="{StaticResource TorrentCard}"
+                                                        ToolTip="{Binding Name}"
+                                                        Command="{Binding DataContext.OpenTorrentCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                                   FontSize="13.5"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding FileSummaryText}"
+                                                                   Foreground="{StaticResource Muted}"
+                                                                   Margin="0,4,0,0"/>
+                                                        <Grid Margin="0,10,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding AddedText}"
+                                                                       Foreground="{StaticResource Muted}"
+                                                                       FontSize="11.5"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Grid.Column="1" Text="Choose files →"
+                                                                       Foreground="{StaticResource AccentHover}"
+                                                                       FontWeight="SemiBold" FontSize="12"
+                                                                       Margin="8,0,0,0"/>
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Border Style="{StaticResource Card}" Padding="16"
+                                            Visibility="{Binding HasRecentReady, Converter={StaticResource BoolToVisInverted}}">
+                                        <TextBlock Style="{StaticResource SubtleText}"
+                                                   Text="Nothing is ready yet. Add a magnet above and it appears here as soon as AllDebrid has it."/>
+                                    </Border>
+
+                                    <!-- Everything that is not ready: one line of chips -->
+                                    <WrapPanel Margin="0,8,0,0"
+                                               Visibility="{Binding HasPending, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="Not ready yet:" Foreground="{StaticResource Muted}"
+                                                   FontSize="12" Margin="0,0,8,6"/>
+
+                                        <ItemsControl ItemsSource="{Binding PendingTorrents}" Focusable="False">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:TorrentViewModel}">
+                                                    <Button Style="{StaticResource ChipButton}"
+                                                            ToolTip="{Binding StatusText}"
+                                                            Command="{Binding DataContext.ShowInClassicCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Ellipse Width="7" Height="7" Margin="0,0,6,0"
+                                                                     VerticalAlignment="Center"
+                                                                     Fill="{Binding Kind, Converter={StaticResource StateBrush}}"/>
+                                                            <TextBlock Text="{Binding Name}" MaxWidth="200"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ChipStatusText}"
+                                                                       Foreground="{StaticResource Muted}"
+                                                                       Margin="6,0,0,0"/>
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Text="{Binding PendingMoreText}"
+                                                   Foreground="{StaticResource Muted}" FontSize="12"
+                                                   Margin="2,0,0,6"
+                                                   Visibility="{Binding HasPendingMore, Converter={StaticResource BoolToVis}}"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DockPanel>
+
+                        <!-- ====================================================== -->
+                        <!-- Wizard step 2: choose files                            -->
+                        <!-- ====================================================== -->
+                        <Grid Visibility="{Binding ShowFilesStep, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding SelectedTorrent.Name, FallbackValue=''}"
+                                               ToolTip="{Binding SelectedTorrent.Name, FallbackValue=''}"
+                                               FontSize="18" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding SelectedTorrent.FileSummaryText, FallbackValue=''}"
+                                               Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                            VerticalAlignment="Bottom" Margin="16,0,0,0">
+                                    <Button Content="Everything" Command="{Binding SelectAllCommand}"/>
+                                    <Button Content="Videos only" Margin="6,0,0,0"
+                                            Command="{Binding SelectVideoOnlyCommand}"/>
+                                    <Button Content="None" Margin="6,0,0,0"
+                                            Command="{Binding SelectNoneCommand}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
+                                <Grid>
+                                    <!-- Exactly one of these is visible; the view model decides. -->
+                                    <TextBlock Style="{StaticResource SubtleText}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Text="{Binding FileEmptyMessage}"
+                                               TextAlignment="Center" Margin="24"
+                                               Visibility="{Binding ShowFileEmptyState,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <TextBlock Style="{StaticResource SubtleText}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Text="Loading the file list…"
+                                               Visibility="{Binding ShowFileLoading,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Margin="24"
+                                                Visibility="{Binding ShowFileError,
+                                                             Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Foreground="{StaticResource Error}"
+                                                   TextWrapping="Wrap" TextAlignment="Center"
+                                                   Text="{Binding FileErrorMessage}"/>
+                                        <Button Content="Try again" Margin="0,12,0,0"
+                                                HorizontalAlignment="Center"
+                                                Command="{Binding RefreshCommand}"/>
+                                    </StackPanel>
+
+                                    <TreeView Margin="8"
+                                              ItemsSource="{Binding SelectedTorrent.Tree.Children}"
+                                              ItemContainerStyle="{StaticResource FileTreeItem}"
+                                              Visibility="{Binding ShowFileTree,
+                                                           Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </Border>
+
+                            <Border Grid.Row="2" Margin="0,12,0,0"
+                                    Background="{StaticResource SurfaceAlt}"
+                                    BorderBrush="{StaticResource BorderBrushBase}" BorderThickness="1"
+                                    CornerRadius="6" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" FontWeight="SemiBold"
+                                               Text="{Binding SelectedTorrent.SelectionSummary, FallbackValue=''}"/>
+
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubtleText}"
+                                               FontSize="11" Margin="16,0" VerticalAlignment="Center"
+                                               TextWrapping="NoWrap"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding DestinationPreview}">
+                                        <Run Text="→"/>
+                                        <Run Text="{Binding DestinationPreview, Mode=OneWay}"/>
+                                    </TextBlock>
+
+                                    <Button Grid.Column="2" MinWidth="170" MinHeight="36"
+                                            Style="{StaticResource PrimaryButton}"
+                                            Content="{Binding SelectedTorrent.DownloadButtonText, FallbackValue='Download'}"
+                                            Command="{Binding DownloadSelectedCommand}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- ====================================================== -->
+                        <!-- Wizard step 3: this batch is downloading               -->
+                        <!-- ====================================================== -->
+                        <Grid Visibility="{Binding ShowStartedStep, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Width="40" Height="40" CornerRadius="20"
+                                        Background="#FF1E3A2A">
+                                    <Path Width="20" Height="20"
+                                          Data="M 4.5,10.5 L 8,14 L 15.5,6"
+                                          Stroke="{StaticResource Success}" StrokeThickness="2.2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding CurrentBatch.TitleText, FallbackValue=''}"
+                                               FontSize="18" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Foreground="{StaticResource Muted}"
+                                               TextTrimming="CharacterEllipsis">
+                                        <Run Text="Saving to"/>
+                                        <Run Text="{Binding CurrentBatch.Folder, Mode=OneWay, FallbackValue=''}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Grid.Row="1" Margin="0,18,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" FontSize="22" FontWeight="SemiBold"
+                                           Text="{Binding CurrentBatch.PercentText, FallbackValue=''}"/>
+                                <TextBlock Grid.Column="1" Margin="14,0,0,0" Foreground="{StaticResource Muted}"
+                                           Text="{Binding CurrentBatch.ProgressText, FallbackValue=''}"/>
+                                <TextBlock Grid.Column="2" Margin="14,0,0,0"
+                                           Foreground="{StaticResource Accent}" FontWeight="SemiBold"
+                                           Text="{Binding CurrentBatch.SpeedText, FallbackValue=''}"/>
+                                <TextBlock Grid.Column="4" Foreground="{StaticResource Muted}"
+                                           Text="{Binding CurrentBatch.EtaText, FallbackValue=''}"/>
+
+                                <ProgressBar Grid.Row="1" Grid.ColumnSpan="5" Margin="0,8,0,0"
+                                             Value="{Binding CurrentBatch.Percent, Mode=OneWay, FallbackValue=0}"
+                                             Maximum="100"/>
+                            </Grid>
+
+                            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="4" Margin="0,16,0,0">
+                                <DataGrid ItemsSource="{Binding CurrentBatch.Items}">
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="File" Width="*">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Ellipse Width="7" Height="7" Margin="0,0,8,0"
+                                                                 Fill="{Binding State,
+                                                                        Converter={StaticResource StateBrush}}"/>
+                                                        <TextBlock Text="{Binding RelativePath}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding FinalPath}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                        <DataGridTextColumn Header="Size" Width="90"
+                                                            Binding="{Binding SizeText}"/>
+
+                                        <DataGridTemplateColumn Header="Done" Width="130">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="44"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding ProgressText}"
+                                                                   FontSize="11"/>
+                                                        <ProgressBar Grid.Column="1" Height="5"
+                                                                     Value="{Binding ProgressPercent, Mode=OneWay}"
+                                                                     Maximum="100"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                        <DataGridTextColumn Header="Speed" Width="90"
+                                                            Binding="{Binding SpeedText}"/>
+                                        <DataGridTextColumn Header="State" Width="170"
+                                                            Binding="{Binding StateText}"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Border>
+
+                            <Grid Grid.Row="3" Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button Grid.Column="0" Content="Open folder"
+                                        Command="{Binding OpenBatchFolderCommand}"/>
+                                <Button Grid.Column="1" Content="See all downloads" Margin="8,0,0,0"
+                                        Command="{Binding ShowDownloadsCommand}"/>
+                                <Button Grid.Column="3" Content="Download something else"
+                                        MinWidth="200" MinHeight="36"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Command="{Binding GoHomeCommand}"/>
+                            </Grid>
+                        </Grid>
+
+                        <!-- ====================================================== -->
+                        <!-- Classic: every torrent, with its files underneath      -->
+                        <!-- ====================================================== -->
+                        <Grid Visibility="{Binding IsClassicView, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="2*" MinHeight="140"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="3*" MinHeight="160"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Add bar -->
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="Add" FontWeight="SemiBold"
+                                           Margin="0,0,10,0"/>
+
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding MagnetInput, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Paste a magnet link or a 40-character info hash. Several lines are allowed."
+                                         AcceptsReturn="True"
+                                         MaxHeight="72"
+                                         VerticalScrollBarVisibility="Auto"
+                                         KeyDown="OnMagnetBoxKeyDown"/>
+
+                                <Button Grid.Column="2" Content="Add" Margin="8,0,0,0" MinWidth="70"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Command="{Binding AddMagnetCommand}"/>
+
+                                <Button Grid.Column="3" Content="Add .torrent" Margin="8,0,0,0"
+                                        Command="{Binding AddTorrentFileCommand}"/>
+                            </Grid>
+
+                            <TextBlock Grid.Row="1" Style="{StaticResource SubtleText}"
+                                       Margin="34,6,0,0" FontSize="11"
+                                       Text="…or drop .torrent files or magnet text anywhere on this window."/>
+
+                            <!-- Torrent list -->
+                            <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,12,0,0" Padding="0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Text="Torrents" Style="{StaticResource Heading}"
+                                               Margin="12,10,0,6"/>
+
+                                    <DataGrid Grid.Row="1" x:Name="TorrentGrid"
+                                              ItemsSource="{Binding Torrents}"
+                                              SelectedItem="{Binding SelectedTorrent, Mode=TwoWay}"
+                                              Margin="4,0">
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="Name" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Ellipse Width="7" Height="7" Margin="0,0,8,0"
+                                                                     Fill="{Binding Kind,
+                                                                            Converter={StaticResource StateBrush}}"/>
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding Name}"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+
+                                            <DataGridTextColumn Header="Status" Width="190"
+                                                                Binding="{Binding StatusText}"/>
+                                            <DataGridTextColumn Header="Size" Width="90"
+                                                                Binding="{Binding SizeText}"/>
+                                            <DataGridTextColumn Header="Progress" Width="80"
+                                                                Binding="{Binding ProgressText}"/>
+                                            <DataGridTextColumn Header="Speed" Width="90"
+                                                                Binding="{Binding SpeedText}"/>
+                                            <DataGridTextColumn Header="Seeds" Width="60"
+                                                                Binding="{Binding SeedersText}"/>
+                                        </DataGrid.Columns>
+
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Refresh"
+                                                          Command="{Binding PlacementTarget.DataContext.RefreshCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                <MenuItem Header="Restart"
+                                                          Command="{Binding PlacementTarget.DataContext.RestartMagnetCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                <MenuItem Header="Copy hash"
+                                                          Command="{Binding PlacementTarget.DataContext.CopyHashCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                <MenuItem Header="Open destination folder"
+                                                          Command="{Binding PlacementTarget.DataContext.OpenDestinationCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Delete from AllDebrid"
+                                                          Command="{Binding PlacementTarget.DataContext.DeleteMagnetCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                    </DataGrid>
+
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="12,8,12,10">
+                                        <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
+                                        <Button Content="Restart" Margin="8,0,0,0"
+                                                Command="{Binding RestartMagnetCommand}"/>
+                                        <Button Content="Delete" Margin="8,0,0,0"
+                                                Command="{Binding DeleteMagnetCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Files header -->
+                            <Grid Grid.Row="3" Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Style="{StaticResource Heading}" Margin="0">
+                                    <Run Text="Files"/>
+                                    <Run Text=" — "/>
+                                    <Run Text="{Binding SelectedTorrent.Name, Mode=OneWay, FallbackValue='no torrent selected'}"/>
+                                </TextBlock>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Content="Select all" Command="{Binding SelectAllCommand}"/>
+                                    <Button Content="Select none" Margin="6,0,0,0"
+                                            Command="{Binding SelectNoneCommand}"/>
+                                    <Button Content="Video only" Margin="6,0,0,0"
+                                            Command="{Binding SelectVideoOnlyCommand}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- File tree -->
+                            <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,8,0,0" Padding="0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Exactly one of these three is visible; the view model
+                                         decides, so no binding can fail open. -->
+                                    <TextBlock Grid.Row="0" Style="{StaticResource SubtleText}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Text="{Binding FileEmptyMessage}"
+                                               TextWrapping="Wrap"
+                                               TextAlignment="Center" Margin="24"
+                                               Visibility="{Binding ShowFileEmptyState,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <TextBlock Grid.Row="0" Style="{StaticResource SubtleText}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Text="Loading the file list…"
+                                               Visibility="{Binding ShowFileLoading,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <TextBlock Grid.Row="0" Foreground="{StaticResource Error}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" TextAlignment="Center" Margin="24"
+                                               Text="{Binding FileErrorMessage}"
+                                               Visibility="{Binding ShowFileError,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <TreeView Grid.Row="0" Margin="8"
+                                              ItemsSource="{Binding SelectedTorrent.Tree.Children}"
+                                              ItemContainerStyle="{StaticResource FileTreeItem}"
+                                              Visibility="{Binding ShowFileTree,
+                                                           Converter={StaticResource BoolToVis}}"/>
+
+                                    <!-- Selection summary + download -->
+                                    <Border Grid.Row="1" Background="{StaticResource SurfaceAlt}"
+                                            BorderBrush="{StaticResource BorderBrushBase}"
+                                            BorderThickness="0,1,0,0"
+                                            CornerRadius="0,0,6,6" Padding="12,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0" FontWeight="SemiBold"
+                                                       Text="{Binding SelectedTorrent.SelectionSummary}"/>
+
+                                            <TextBlock Grid.Column="1" Style="{StaticResource SubtleText}"
+                                                       FontSize="11" Margin="16,0"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding DestinationPreview}"
+                                                       Visibility="{Binding HasSelection,
+                                                                    Converter={StaticResource BoolToVis}}">
+                                                <Run Text="→"/>
+                                                <Run Text="{Binding DestinationPreview, Mode=OneWay}"/>
+                                            </TextBlock>
+
+                                            <Button Grid.Column="2" Content="Download Selected"
+                                                    MinWidth="150"
+                                                    Style="{StaticResource PrimaryButton}"
+                                                    Command="{Binding DownloadSelectedCommand}"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- ================================================================ -->
+            <!-- DOWNLOADS                                                         -->
+            <!-- ================================================================ -->
+            <TabItem Header="Downloads" Style="{StaticResource MenuTabItem}">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Overall"
+                                       FontWeight="SemiBold" Margin="0,0,16,0"/>
+
+                            <TextBlock Grid.Row="0" Grid.Column="1"
+                                       Text="{Binding AggregateProgressText}"/>
+
+                            <TextBlock Grid.Row="0" Grid.Column="2"
+                                       Text="{Binding AggregateSpeedText}"
+                                       Foreground="{StaticResource Accent}"
+                                       FontWeight="SemiBold" Margin="16,0"/>
+
+                            <TextBlock Grid.Row="0" Grid.Column="3" Margin="8,0,0,0"
+                                       Foreground="{StaticResource Muted}">
+                                <Run Text="ETA"/>
+                                <Run Text="{Binding AggregateEtaText, Mode=OneWay}"/>
+                            </TextBlock>
+
+                            <ProgressBar Grid.Row="1" Grid.ColumnSpan="4"
+                                         Value="{Binding AggregatePercent, Mode=OneWay}"
+                                         Maximum="100" Margin="0,10,0,0"/>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,12">
+                        <Button Content="Pause all" Command="{Binding PauseAllCommand}"/>
+                        <Button Content="Resume all" Margin="8,0,0,0"
+                                Command="{Binding ResumeAllCommand}"/>
+                        <Button Content="Cancel all" Margin="8,0,0,0"
+                                Command="{Binding CancelAllCommand}"/>
+                        <Button Content="Clear finished" Margin="8,0,0,0"
+                                Command="{Binding ClearFinishedCommand}"/>
+                    </StackPanel>
+
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Padding="4">
+                        <DataGrid ItemsSource="{Binding Downloads.Transfers}">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="File" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="7" Height="7" Margin="0,0,8,0"
+                                                         Fill="{Binding State,
+                                                                Converter={StaticResource StateBrush}}"/>
+                                                <TextBlock Text="{Binding RelativePath}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding FinalPath}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTextColumn Header="Size" Width="90"
+                                                    Binding="{Binding SizeText}"/>
+
+                                <DataGridTemplateColumn Header="Done" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="44"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding ProgressText}"
+                                                           FontSize="11"/>
+                                                <ProgressBar Grid.Column="1" Height="5"
+                                                             Value="{Binding ProgressPercent, Mode=OneWay}"
+                                                             Maximum="100"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTextColumn Header="Speed" Width="90"
+                                                    Binding="{Binding SpeedText}"/>
+                                <DataGridTextColumn Header="ETA" Width="80"
+                                                    Binding="{Binding EtaText}"/>
+                                <DataGridTextColumn Header="State" Width="190"
+                                                    Binding="{Binding StateText}"/>
+                            </DataGrid.Columns>
+
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Setter Property="ContextMenu">
+                                        <Setter.Value>
+                                            <ContextMenu>
+                                                <MenuItem Header="Pause"
+                                                          Command="{Binding DataContext.PauseCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                                <MenuItem Header="Resume"
+                                                          Command="{Binding DataContext.ResumeCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                                <MenuItem Header="Retry"
+                                                          Command="{Binding DataContext.RetryCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                                <MenuItem Header="Cancel"
+                                                          Command="{Binding DataContext.CancelCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Open containing folder"
+                                                          Command="{Binding DataContext.OpenContainingFolderCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                                <MenuItem Header="Copy error"
+                                                          Command="{Binding DataContext.CopyErrorCommand,
+                                                                    RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                          CommandParameter="{Binding}"/>
+                                            </ContextMenu>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </DataGrid.RowStyle>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ================================================================ -->
+            <!-- SETTINGS                                                          -->
+            <!-- ================================================================ -->
+            <TabItem Header="Settings" Style="{StaticResource MenuTabItem}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16" MaxWidth="760" HorizontalAlignment="Left">
+
+                        <!-- Account -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Account" Style="{StaticResource Heading}"/>
+                                <TextBlock Text="{Binding AccountText}" Margin="0,0,0,10"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Change API key…" Click="OnChangeApiKey"/>
+                                    <Button Content="Re-link with PIN…" Margin="8,0,0,0"
+                                            Click="OnRelinkWithPin"/>
+                                    <Button Content="Sign out" Margin="8,0,0,0" Click="OnSignOut"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Output folder -->
+                        <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Output folder" Style="{StaticResource Heading}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding Settings.DownloadDirectory,
+                                                    UpdateSourceTrigger=LostFocus}"/>
+                                    <Button Grid.Column="1" Content="Browse…" Margin="8,0,0,0"
+                                            Command="{Binding Settings.BrowseFolderCommand}"/>
+                                    <Button Grid.Column="2" Content="Open" Margin="8,0,0,0"
+                                            Command="{Binding Settings.OpenFolderCommand}"/>
+                                </Grid>
+                                <TextBlock Style="{StaticResource SubtleText}" FontSize="11"
+                                           Margin="0,8,0,0"
+                                           Text="Each torrent is placed in its own subfolder named after the torrent, keeping its original structure."/>
+                                <TextBlock Foreground="{StaticResource Error}" Margin="0,6,0,0"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding Settings.FolderProblem}"
+                                           Visibility="{Binding Settings.HasFolderProblem,
+                                                        Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Downloads -->
+                        <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Downloads" Style="{StaticResource Heading}"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Simultaneous files"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Settings.ConcurrentFileOptions}"
+                                              SelectedItem="{Binding Settings.MaxConcurrentFiles}"/>
+                                    <TextBlock Grid.Column="2" Style="{StaticResource SubtleText}"
+                                               FontSize="11" Margin="12,0,0,0" Text="1–8"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Connections per file"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Settings.ConnectionOptions}"
+                                              SelectedItem="{Binding Settings.ConnectionsPerFile}"/>
+                                    <TextBlock Grid.Column="2" Style="{StaticResource SubtleText}"
+                                               FontSize="11" Margin="12,0,0,0"
+                                               Text="Splits each large file into parallel ranges."/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Global speed limit"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Settings.SpeedOptions}"
+                                              SelectedItem="{Binding Settings.SelectedSpeed}"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="If a file already exists"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Settings.PolicyOptions}"
+                                              SelectedItem="{Binding Settings.ExistingFilePolicy}"/>
+                                </Grid>
+
+                                <CheckBox Content="Resume interrupted downloads on startup"
+                                          IsChecked="{Binding Settings.ResumeOnStartup}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- AllDebrid -->
+                        <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="AllDebrid" Style="{StaticResource Heading}"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Status poll interval"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Settings.PollIntervalOptions}"
+                                              SelectedItem="{Binding Settings.StatusPollIntervalSeconds}"/>
+                                    <TextBlock Grid.Column="2" Style="{StaticResource SubtleText}"
+                                               FontSize="11" Margin="12,0,0,0" Text="seconds"/>
+                                </Grid>
+
+                                <CheckBox IsChecked="{Binding Settings.DeleteMagnetAfterDownload}"
+                                          Content="Delete the magnet from AllDebrid after all its files finish"/>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <Button Content="Open config folder"
+                                    Command="{Binding Settings.OpenConfigFolderCommand}"/>
+                            <Button Content="Open log folder" Margin="8,0,0,0"
+                                    Command="{Binding Settings.OpenLogFolderCommand}"/>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ================================================================ -->
+            <!-- LOG                                                               -->
+            <!-- ================================================================ -->
+            <TabItem Header="Log" Style="{StaticResource MenuTabItem}">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Level" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="LogLevelFilter" Width="110"
+                                  SelectionChanged="OnLogFilterChanged"/>
+                        <CheckBox x:Name="AutoScrollLog" Content="Auto-scroll"
+                                  IsChecked="True" Margin="16,0,0,0"/>
+                        <Button Content="Copy all" Margin="16,0,0,0" Click="OnCopyLog"/>
+                        <Button Content="Open log folder" Margin="8,0,0,0"
+                                Command="{Binding Settings.OpenLogFolderCommand}"/>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Padding="4">
+                        <ListBox x:Name="LogList"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 VirtualizingPanel.IsVirtualizing="True">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Padding" Value="4,1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               FontFamily="Consolas" FontSize="12"
+                                               Foreground="{StaticResource Muted}"
+                                               TextWrapping="NoWrap"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- ================================================================ -->
+        <!-- STATUS BAR                                                        -->
+        <!-- ================================================================ -->
+        <Border Grid.Row="1" Background="{StaticResource Surface}"
+                BorderBrush="{StaticResource BorderBrushBase}" BorderThickness="0,1,0,0"
+                Padding="16,7">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
+                         VerticalAlignment="Center">
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="{StaticResource Success}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding User}" Value="{x:Null}">
+                                    <Setter Property="Fill" Value="{StaticResource Muted}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock Grid.Column="2" Text="{Binding ActivityText}"
+                           Foreground="{StaticResource Muted}"/>
+            </Grid>
+        </Border>
+
+        <!-- Drag-and-drop overlay -->
+        <Border x:Name="DropOverlay" Grid.RowSpan="2"
+                Background="#CC16181C" Visibility="Collapsed"
+                BorderBrush="{StaticResource Accent}" BorderThickness="2">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="Drop to add" FontSize="24" FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text=".torrent files or magnet links"
+                           Foreground="{StaticResource Muted}" Margin="0,8,0,0"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

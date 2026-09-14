@@ -1,0 +1,59 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]64/
+publish/
+artifacts/
+*.dll
+*.exe
+*.pdb
+*.cache
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.csproj.user
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*
+*.coverage
+*.trx
+
+# OS
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+
+# THIS APP -- never commit secrets or local state
+config.json
+config.*.json
+appsettings.Local.json
+*.apikey
+secrets.json
+logs/
+*.log
+
+# Local test data
+*.torrent
+*.part
+*.part.json
+
+# Markdown kept out of the repo at the owner's request (prompt.md, README.md, notes)
+*.md
