@@ -1,0 +1,149 @@
+name: Build draft release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  app:
+    name: Build Windows app
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate tag and project version
+        id: metadata
+        shell: pwsh
+        env:
+          RELEASE_TAG_INPUT: ${{ github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG_INPUT
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+            throw "Release tags must use the exact vMAJOR.MINOR.PATCH form. Received: $tag"
+          }
+          $version = $Matches.version
+
+          [xml]$project = Get-Content -LiteralPath 'src/AllDebridDownloader/AllDebridDownloader.csproj' -Raw
+          $versionNode = $project.SelectSingleNode('//Version')
+          if ($null -eq $versionNode -or [string]::IsNullOrWhiteSpace($versionNode.InnerText)) {
+            throw 'Version is missing from src/AllDebridDownloader/AllDebridDownloader.csproj.'
+          }
+          $projectVersion = $versionNode.InnerText.Trim()
+          if ($projectVersion -ne $version) {
+            throw "Tag $tag does not match project Version $projectVersion."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          dotnet test AllDebridDownloader.slnx --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+
+      - name: Publish single-file app
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'alldebrid-release'
+          dotnet publish src/AllDebridDownloader/AllDebridDownloader.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output $output
+          if ($LASTEXITCODE -ne 0) { throw 'App publish failed.' }
+
+          $source = Join-Path $output 'AllDebridDownloader.exe'
+          $name = 'AllDebridDownloader-${{ steps.metadata.outputs.version }}.exe'
+          $destination = Join-Path $output $name
+          Move-Item -LiteralPath $source -Destination $destination
+
+          $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content `
+            -LiteralPath (Join-Path $output "$name.sha256") `
+            -Encoding ascii `
+            -NoNewline
+
+      - name: Prepare draft release notes
+        shell: pwsh
+        run: |
+          @'
+          # AllDebrid Downloader ${{ steps.metadata.outputs.tag }}
+
+          A small Windows desktop utility that sends magnets and `.torrent` files to AllDebrid, shows the resulting file tree, and downloads the files you pick with a resumable, multi-connection download engine.
+
+          ## Install
+
+          1. Download `AllDebridDownloader-${{ steps.metadata.outputs.version }}.exe`.
+          2. Verify it with the attached `.sha256` file.
+          3. Run it. The app is a single self-contained executable, so .NET does not need to be installed.
+          4. Connect with a PIN code or an AllDebrid API key.
+
+          The executable is currently unsigned, so Windows may display a SmartScreen warning.
+
+          ## Maintainer checklist before publishing
+
+          - Run the attached executable once and confirm it connects and downloads.
+          - Replace or expand these draft notes with the changes in this release.
+          - Publish this draft only after all assets are present.
+
+          ## Compatibility
+
+          Windows x64 and an active AllDebrid premium subscription are required. Settings and logs live in `%APPDATA%\AllDebridDownloader`.
+          '@ | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-notes.md') -Encoding utf8
+
+      - name: Create or update draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'alldebrid-release'
+          $exe = Join-Path $output "AllDebridDownloader-$env:RELEASE_VERSION.exe"
+          $checksum = "$exe.sha256"
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+
+          $existing = & gh release view $env:RELEASE_TAG --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) {
+              throw "Release $env:RELEASE_TAG is already public; refusing to replace its assets."
+            }
+
+            gh release upload $env:RELEASE_TAG $exe $checksum --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Uploading app assets failed.' }
+            gh release edit $env:RELEASE_TAG `
+              --draft `
+              --title "AllDebrid Downloader $env:RELEASE_TAG" `
+              --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Updating the draft release failed.' }
+          }
+          else {
+            gh release create $env:RELEASE_TAG $exe $checksum `
+              --verify-tag `
+              --draft `
+              --title "AllDebrid Downloader $env:RELEASE_TAG" `
+              --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Creating the draft release failed.' }
+          }
