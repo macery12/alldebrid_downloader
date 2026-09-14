@@ -111,7 +111,7 @@
                             <TextBlock Grid.Row="0" Text="Torrents" Style="{StaticResource Heading}"
                                        Margin="12,10,0,6"/>
 
-                            <DataGrid Grid.Row="1"
+                            <DataGrid Grid.Row="1" x:Name="TorrentGrid"
                                       ItemsSource="{Binding Torrents}"
                                       SelectedItem="{Binding SelectedTorrent, Mode=TwoWay}"
                                       Margin="4,0">
@@ -206,30 +206,32 @@
                             </Grid.RowDefinitions>
 
                             <!-- Empty / loading / error states -->
+                            <!-- Exactly one of these three is visible; the view model
+                                 decides, so no binding can fail open. -->
                             <TextBlock Grid.Row="0" Style="{StaticResource SubtleText}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Text="Select a torrent above. Its files appear here once AllDebrid reports it ready."
+                                       Text="{Binding FileEmptyMessage}"
+                                       TextWrapping="Wrap"
                                        TextAlignment="Center" Margin="24"
-                                       Visibility="{Binding SelectedTorrent.HasTree,
-                                                    Converter={StaticResource BoolToVisInverted},
-                                                    FallbackValue=Visible}"/>
+                                       Visibility="{Binding ShowFileEmptyState,
+                                                    Converter={StaticResource BoolToVis}}"/>
 
                             <TextBlock Grid.Row="0" Style="{StaticResource SubtleText}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Text="Loading the file list…"
-                                       Visibility="{Binding SelectedTorrent.IsLoadingFiles,
+                                       Visibility="{Binding ShowFileLoading,
                                                     Converter={StaticResource BoolToVis}}"/>
 
                             <TextBlock Grid.Row="0" Foreground="{StaticResource Error}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        TextWrapping="Wrap" TextAlignment="Center" Margin="24"
-                                       Text="{Binding SelectedTorrent.FileError}"
-                                       Visibility="{Binding SelectedTorrent.HasFileError,
+                                       Text="{Binding FileErrorMessage}"
+                                       Visibility="{Binding ShowFileError,
                                                     Converter={StaticResource BoolToVis}}"/>
 
                             <TreeView Grid.Row="0" Margin="8"
                                       ItemsSource="{Binding SelectedTorrent.Tree.Children}"
-                                      Visibility="{Binding SelectedTorrent.HasTree,
+                                      Visibility="{Binding ShowFileTree,
                                                    Converter={StaticResource BoolToVis}}">
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
@@ -284,7 +286,9 @@
                                     <TextBlock Grid.Column="1" Style="{StaticResource SubtleText}"
                                                FontSize="11" Margin="16,0"
                                                TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding DestinationPreview}">
+                                               ToolTip="{Binding DestinationPreview}"
+                                               Visibility="{Binding HasSelection,
+                                                            Converter={StaticResource BoolToVis}}">
                                         <Run Text="→"/>
                                         <Run Text="{Binding DestinationPreview, Mode=OneWay}"/>
                                     </TextBlock>

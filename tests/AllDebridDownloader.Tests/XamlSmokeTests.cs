@@ -162,6 +162,126 @@ public sealed class XamlSmokeTests
     }
 
     [Fact]
+    public void Every_tab_realises_its_content()
+    {
+        // A TabControl only builds the selected tab, so measuring the window once left
+        // Downloads, Settings and Log completely unverified -- which is how a pile of
+        // unstyled ComboBoxes on the Settings tab went unnoticed.
+        OnStaThread(app =>
+        {
+            using var log = new TestLogger();
+            using var temp = new TempDir();
+
+            var config = new ConfigService(log.Logger, temp.Path);
+            config.Load();
+            config.Current.DownloadDirectory = temp.Path;
+
+            using var vm = new MainViewModel(log.Logger, config);
+
+            var window = new MainWindow { DataContext = vm };
+            window.UseWindowState(() => config.Current.WindowState);
+
+            Realize(window);
+            try
+            {
+                var tabs = FindVisualChild<System.Windows.Controls.TabControl>(window);
+                Assert.NotNull(tabs);
+                Assert.Equal(4, tabs.Items.Count);
+
+                for (var i = 0; i < tabs.Items.Count; i++)
+                {
+                    tabs.SelectedIndex = i;
+
+                    // Force the newly selected tab's content to be built and laid out.
+                    window.UpdateLayout();
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void Settings_dropdowns_use_the_dark_template_rather_than_the_system_one()
+    {
+        OnStaThread(_ =>
+        {
+            using var log = new TestLogger();
+            using var temp = new TempDir();
+
+            var config = new ConfigService(log.Logger, temp.Path);
+            config.Load();
+            config.Current.DownloadDirectory = temp.Path;
+
+            using var vm = new MainViewModel(log.Logger, config);
+
+            var window = new MainWindow { DataContext = vm };
+            window.UseWindowState(() => config.Current.WindowState);
+
+            Realize(window);
+            try
+            {
+                var tabs = FindVisualChild<System.Windows.Controls.TabControl>(window);
+                Assert.NotNull(tabs);
+
+                // Settings is the third tab.
+                tabs.SelectedIndex = 2;
+                window.UpdateLayout();
+
+                var combo = FindVisualChild<System.Windows.Controls.ComboBox>(window);
+                Assert.NotNull(combo);
+                combo.ApplyTemplate();
+
+                // The templated popup border is named in the dark theme; the stock WPF
+                // template has no such part, so finding it proves the theme applied and
+                // the dropdown is not falling back to the light system template.
+                Assert.NotNull(combo.Template.FindName("PopupBorder", combo));
+                Assert.NotNull(combo.Template.FindName("PART_Popup", combo));
+
+                // And the selection actually round-trips, so the box is not blank.
+                Assert.NotNull(combo.SelectedItem);
+                Assert.Equal(config.Current.MaxConcurrentFiles, vm.Settings.MaxConcurrentFiles);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// Measure/Arrange alone does not build a Window's visual tree -- its template is
+    /// only applied once it is shown. Shows it far off-screen so the tree is real.
+    /// </summary>
+    private static void Realize(Window window)
+    {
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = -32000;
+        window.Top = -32000;
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+        window.Show();
+        window.UpdateLayout();
+    }
+
+    /// <summary>Depth-first search of the visual tree for the first T.</summary>
+    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+
+            var deeper = FindVisualChild<T>(child);
+            if (deeper is not null) return deeper;
+        }
+        return null;
+    }
+
+    [Fact]
     public void Main_window_survives_a_narrow_layout()
     {
         OnStaThread(_ =>

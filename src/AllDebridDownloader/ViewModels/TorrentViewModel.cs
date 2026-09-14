@@ -173,6 +173,7 @@ public sealed class TorrentViewModel : ObservableObject
     public void UpdateFrom(MagnetStatus status)
     {
         if (!string.IsNullOrWhiteSpace(status.Filename)) Name = status.Filename!;
+        if (!string.IsNullOrWhiteSpace(status.Hash)) Hash = status.Hash;
         if (status.Size is > 0) Size = status.Size.Value;
         if (status.Downloaded is not null) Downloaded = status.Downloaded.Value;
         if (status.Seeders is not null) Seeders = status.Seeders;

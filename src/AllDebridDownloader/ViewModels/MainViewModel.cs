@@ -187,9 +187,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         get => _selectedTorrent;
         set
         {
+            var previous = _selectedTorrent;
             if (!SetProperty(ref _selectedTorrent, value)) return;
 
+            // Follow the selected torrent's own state so the file pane can react to it
+            // loading, failing or producing a tree.
+            if (previous is not null)
+                previous.PropertyChanged -= OnSelectedTorrentPropertyChanged;
+            if (value is not null)
+                value.PropertyChanged += OnSelectedTorrentPropertyChanged;
+
             OnPropertiesChanged(nameof(HasSelection), nameof(DestinationPreview));
+            RaiseFilePaneState();
             DeleteMagnetCommand.RaiseCanExecuteChanged();
             RestartMagnetCommand.RaiseCanExecuteChanged();
             DownloadSelectedCommand.RaiseCanExecuteChanged();
@@ -201,6 +210,65 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     public bool HasSelection => SelectedTorrent is not null;
+
+    // ---- file pane state -------------------------------------------------
+    //
+    // Exactly one of these is true at a time. They live here rather than on
+    // TorrentViewModel because MainViewModel is never null: a binding through
+    // "SelectedTorrent.Something" fails when nothing is selected, and a failed
+    // Visibility binding falls back to Visible, which put two messages on top of
+    // each other.
+
+    public bool ShowFileTree => SelectedTorrent?.HasTree == true;
+
+    public bool ShowFileLoading => !ShowFileTree && SelectedTorrent?.IsLoadingFiles == true;
+
+    public bool ShowFileError =>
+        !ShowFileTree && !ShowFileLoading && SelectedTorrent?.HasFileError == true;
+
+    public bool ShowFileEmptyState => !ShowFileTree && !ShowFileLoading && !ShowFileError;
+
+    public string? FileErrorMessage => SelectedTorrent?.FileError;
+
+    /// <summary>Explains why the pane is empty, which differs per situation.</summary>
+    public string FileEmptyMessage
+    {
+        get
+        {
+            if (SelectedTorrent is null)
+                return "Select a torrent above. Its files appear here once AllDebrid reports it ready.";
+
+            if (SelectedTorrent.IsError)
+                return "This torrent failed on AllDebrid, so there are no files to download.";
+
+            if (!SelectedTorrent.IsReady)
+                return "Waiting for AllDebrid to finish processing this torrent\u2026";
+
+            return "AllDebrid reported no files for this torrent.";
+        }
+    }
+
+    private void OnSelectedTorrentPropertyChanged(
+        object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(TorrentViewModel.Tree):
+            case nameof(TorrentViewModel.HasTree):
+            case nameof(TorrentViewModel.IsLoadingFiles):
+            case nameof(TorrentViewModel.FileError):
+            case nameof(TorrentViewModel.HasFileError):
+            case nameof(TorrentViewModel.Kind):
+            case nameof(TorrentViewModel.Name):
+                OnUi(RaiseFilePaneState);
+                break;
+        }
+    }
+
+    private void RaiseFilePaneState() => OnPropertiesChanged(
+        nameof(ShowFileTree), nameof(ShowFileLoading), nameof(ShowFileError),
+        nameof(ShowFileEmptyState), nameof(FileEmptyMessage), nameof(FileErrorMessage),
+        nameof(DestinationPreview));
 
     public UserInfo? User
     {
@@ -491,10 +559,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// Add a row per uploaded item. Per-item errors are shown as failed rows rather than
     /// discarding the whole response.
     /// </summary>
+    /// <summary>
+    /// Adds a row per uploaded item at the TOP of the list, so what you just submitted is
+    /// where you are already looking. Items keep the order you submitted them, a magnet
+    /// that was already on the account is moved up rather than left buried, and the first
+    /// of them is selected and scrolled to.
+    /// </summary>
     private void HandleUploadResults(List<UploadedMagnet> results, string kind)
     {
         var added = 0;
         var failed = new List<string>();
+
+        // Insert at an advancing index rather than repeatedly at 0, which would reverse
+        // a batch of pasted magnets.
+        var insertAt = 0;
+        TorrentViewModel? firstTouched = null;
 
         foreach (var result in results)
         {
@@ -503,20 +582,33 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var message = ApiErrorMessages.Friendly(result.Error?.Code, result.Error?.Message);
                 failed.Add(message);
 
-                Torrents.Insert(0, new TorrentViewModel(0)
+                var errorRow = new TorrentViewModel(0)
                 {
                     Name = Shorten(result.SourceLabel, 60),
                     StatusText = message,
                     AddError = message,
                     Kind = MagnetStatusKind.Error
-                });
+                };
+
+                Torrents.Insert(Math.Min(insertAt++, Torrents.Count), errorRow);
+                firstTouched ??= errorRow;
                 continue;
             }
 
             var existing = Torrents.FirstOrDefault(t => t.Id == result.Id);
             if (existing is not null)
             {
+                // Already on the account: refresh what we know and bring it to the top,
+                // because the user just asked for it and expects to see it.
                 existing.Hash = result.Hash;
+                if (result.Size > 0) existing.Size = result.Size;
+
+                var currentIndex = Torrents.IndexOf(existing);
+                var target = Math.Min(insertAt, Torrents.Count - 1);
+                if (currentIndex != target) Torrents.Move(currentIndex, target);
+                insertAt++;
+
+                firstTouched ??= existing;
                 continue;
             }
 
@@ -529,11 +621,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 StatusText = result.Ready ? "Ready" : "In queue"
             };
 
-            Torrents.Insert(0, vm);
+            Torrents.Insert(Math.Min(insertAt++, Torrents.Count), vm);
             _poller.Track(result);
             added++;
 
-            SelectedTorrent ??= vm;
+            firstTouched ??= vm;
         }
 
         if (added > 0)
@@ -544,7 +636,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         if (failed.Count > 0)
             SetNotice(failed.Count == 1 ? failed[0] : failed.Count + " items failed to add.", true);
+
+        if (firstTouched is not null)
+        {
+            SelectedTorrent = firstTouched;
+            TorrentBroughtToTop?.Invoke(firstTouched);
+        }
     }
+
+    /// <summary>
+    /// Raised after an add so the view can scroll the row into sight. The list is
+    /// virtualised, so being at index 0 is not enough on its own when the grid is
+    /// scrolled down.
+    /// </summary>
+    public event Action<TorrentViewModel>? TorrentBroughtToTop;
 
     private static string Shorten(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
@@ -562,7 +667,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 var vm = Torrents.FirstOrDefault(t => t.Id == status.Id);
                 if (vm is null)
                 {
-                    // A magnet added elsewhere (the website, another session).
+                    // A magnet added elsewhere (the website, another session). It goes to
+                    // the bottom: the top is reserved for what the user just submitted.
                     vm = new TorrentViewModel(status.Id);
                     vm.UpdateFrom(status);
                     Torrents.Add(vm);

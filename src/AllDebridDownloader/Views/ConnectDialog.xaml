@@ -103,9 +103,10 @@
         </Border>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="Cancel" Click="OnCancel" MinWidth="90"/>
+            <Button Content="Cancel" Click="OnCancel" MinWidth="90" IsCancel="True"/>
             <Button x:Name="ConnectButton" Content="Connect" Margin="8,0,0,0" MinWidth="110"
                     Style="{StaticResource PrimaryButton}"
+                    IsDefault="True"
                     IsEnabled="False"
                     Click="OnConnect"/>
         </StackPanel>

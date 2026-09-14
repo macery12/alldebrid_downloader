@@ -104,13 +104,17 @@ public sealed class UploadedMagnet
 
 public sealed class MagnetUploadEnvelope
 {
-    [JsonPropertyName("magnets")] public List<UploadedMagnet>? Magnets { get; set; }
+    [JsonPropertyName("magnets")]
+    [JsonConverter(typeof(SingleOrArrayConverter<UploadedMagnet>))]
+    public List<UploadedMagnet>? Magnets { get; set; }
 }
 
 public sealed class TorrentUploadEnvelope
 {
     /// <summary>Note the key: this endpoint returns "files", not "magnets".</summary>
-    [JsonPropertyName("files")] public List<UploadedMagnet>? Files { get; set; }
+    [JsonPropertyName("files")]
+    [JsonConverter(typeof(SingleOrArrayConverter<UploadedMagnet>))]
+    public List<UploadedMagnet>? Files { get; set; }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +135,7 @@ public sealed class MagnetStatus
     public long Id { get; set; }
 
     [JsonPropertyName("filename")] public string? Filename { get; set; }
+    [JsonPropertyName("hash")] public string? Hash { get; set; }
     [JsonPropertyName("size")] public long? Size { get; set; }
     [JsonPropertyName("status")] public string? Status { get; set; }
     [JsonPropertyName("statusCode")] public int? StatusCode { get; set; }
@@ -161,6 +166,7 @@ public sealed class MagnetStatus
     public void ApplyDelta(MagnetStatus delta)
     {
         if (delta.Filename is not null) Filename = delta.Filename;
+        if (delta.Hash is not null) Hash = delta.Hash;
         if (delta.Size is not null) Size = delta.Size;
         if (delta.Status is not null) Status = delta.Status;
         if (delta.StatusCode is not null) StatusCode = delta.StatusCode;
@@ -225,7 +231,11 @@ public static class StatusCodes
 
 public sealed class MagnetStatusEnvelope
 {
-    [JsonPropertyName("magnets")] public List<MagnetStatus>? Magnets { get; set; }
+    // Live mode sends an array on a fullsync but a bare object on a delta that carries a
+    // single changed magnet. Verified against the live API; not in the documentation.
+    [JsonPropertyName("magnets")]
+    [JsonConverter(typeof(SingleOrArrayConverter<MagnetStatus>))]
+    public List<MagnetStatus>? Magnets { get; set; }
     [JsonPropertyName("counter")] public long? Counter { get; set; }
     [JsonPropertyName("fullsync")] public bool? FullSync { get; set; }
 }
@@ -265,7 +275,9 @@ public sealed class MagnetFilesEntry
 
 public sealed class MagnetFilesEnvelope
 {
-    [JsonPropertyName("magnets")] public List<MagnetFilesEntry>? Magnets { get; set; }
+    [JsonPropertyName("magnets")]
+    [JsonConverter(typeof(SingleOrArrayConverter<MagnetFilesEntry>))]
+    public List<MagnetFilesEntry>? Magnets { get; set; }
 }
 
 // ---------------------------------------------------------------------------

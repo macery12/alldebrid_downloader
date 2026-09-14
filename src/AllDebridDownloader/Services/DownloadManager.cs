@@ -698,12 +698,7 @@ public sealed class DownloadManager : IDisposable
         try { if (File.Exists(path)) File.Delete(path); } catch { /* best effort */ }
     }
 
-    private static void OnUi(Action action)
-    {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) action();
-        else dispatcher.Post(action);
-    }
+    private static void OnUi(Action action) => UiDispatch.Invoke(action);
 
     public void Dispose()
     {

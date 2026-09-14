@@ -50,6 +50,7 @@
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button x:Name="UseButton" Content="Use this folder" MinWidth="140"
                     Style="{StaticResource PrimaryButton}"
+                    IsDefault="True"
                     Click="OnUse"/>
         </StackPanel>
 

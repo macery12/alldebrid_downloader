@@ -54,6 +54,9 @@ public partial class App : Application
         MainWindow = window;
         window.Show();
 
+        // Setup is done and the real window exists, so normal close-to-quit resumes.
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+
         _ = vm.StartAsync();
     }
 

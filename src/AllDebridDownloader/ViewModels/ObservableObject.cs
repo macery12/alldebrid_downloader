@@ -29,11 +29,32 @@ public abstract class ObservableObject : INotifyPropertyChanged
     }
 
     /// <summary>Marshal an action onto the UI thread, or run it now if already there.</summary>
-    protected static void OnUi(Action action)
+    protected static void OnUi(Action action) => UiDispatch.Invoke(action);
+}
+
+/// <summary>
+/// One place that decides whether work needs marshalling to the UI thread.
+/// </summary>
+public static class UiDispatch
+{
+    public static void Invoke(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) action();
-        else dispatcher.Post(action);
+
+        // No Application, already on the UI thread, or that thread is gone or going:
+        // run inline. Posting to a dispatcher that will never pump again would drop the
+        // update silently.
+        if (dispatcher is null
+            || dispatcher.CheckAccess()
+            || dispatcher.HasShutdownStarted
+            || dispatcher.HasShutdownFinished
+            || !dispatcher.Thread.IsAlive)
+        {
+            action();
+            return;
+        }
+
+        dispatcher.Post(action);
     }
 }
 
@@ -77,12 +98,7 @@ public sealed class RelayCommand : ICommand
     public void RaiseCanExecuteChanged() =>
         OnUiThread(() => CanExecuteChanged?.Invoke(this, EventArgs.Empty));
 
-    internal static void OnUiThread(Action action)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) action();
-        else dispatcher.Post(action);
-    }
+    internal static void OnUiThread(Action action) => UiDispatch.Invoke(action);
 }
 
 /// <summary>

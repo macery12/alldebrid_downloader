@@ -47,9 +47,29 @@ public partial class MainWindow : Window
             if (entry.Level >= _minimumDisplayedLevel) _logLines.Add(entry.ToString());
 
         Vm.Log.EntryLogged += OnLogEntry;
+        Vm.TorrentBroughtToTop += OnTorrentBroughtToTop;
 
         Vm.Settings.ChangeApiKeyRequested = () => ChangeApiKey(usePin: false);
         Vm.Settings.SignOutRequested = SignOut;
+    }
+
+    /// <summary>
+    /// Bring a just-submitted torrent into view. The grid virtualises its rows, so being
+    /// at the top of the collection is not enough when it is scrolled down.
+    /// </summary>
+    private void OnTorrentBroughtToTop(ViewModels.TorrentViewModel torrent)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                TorrentGrid.ScrollIntoView(torrent);
+            }
+            catch
+            {
+                // Scrolling is a convenience; never let it break an add.
+            }
+        });
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
